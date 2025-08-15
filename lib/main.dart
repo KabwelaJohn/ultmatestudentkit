@@ -109,7 +109,6 @@ class _ParticlePlaygroundState extends State<ParticlePlayground>
   Color _currentColor = Colors.purple;
   bool _isEmitting = false;
   double _emissionRate = 5;
-  int _frameCount = 0;
 
   final List<Color> _colorPalette = [
     Colors.purple,
@@ -133,7 +132,6 @@ class _ParticlePlaygroundState extends State<ParticlePlayground>
     _animationController.addListener(() {
       setState(() {
         _particleSystem.update();
-        _frameCount++;
       });
     });
   }
