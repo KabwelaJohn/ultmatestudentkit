@@ -1,122 +1,362 @@
 import 'package:flutter/material.dart';
+import 'dart:math' as math;
+import 'dart:ui' as ui;
 
 void main() {
-  runApp(const MyApp());
+  runApp(const ParticlePlaygroundApp());
 }
 
-class MyApp extends StatelessWidget {
-  const MyApp({super.key});
+class ParticlePlaygroundApp extends StatelessWidget {
+  const ParticlePlaygroundApp({super.key});
 
-  // This widget is the root of your application.
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
-      title: 'Flutter Demo',
-      theme: ThemeData(
-        // This is the theme of your application.
-        //
-        // TRY THIS: Try running your application with "flutter run". You'll see
-        // the application has a purple toolbar. Then, without quitting the app,
-        // try changing the seedColor in the colorScheme below to Colors.green
-        // and then invoke "hot reload" (save your changes or press the "hot
-        // reload" button in a Flutter-supported IDE, or press "r" if you used
-        // the command line to start the app).
-        //
-        // Notice that the counter didn't reset back to zero; the application
-        // state is not lost during the reload. To reset the state, use hot
-        // restart instead.
-        //
-        // This works for code too, not just values: Most code changes can be
-        // tested with just a hot reload.
-        colorScheme: ColorScheme.fromSeed(seedColor: Colors.deepPurple),
+      title: 'Particle Playground',
+      theme: ThemeData.dark().copyWith(
+        primaryColor: Colors.purple,
+        scaffoldBackgroundColor: Colors.black,
+        colorScheme: ColorScheme.dark(
+          primary: Colors.purple,
+          secondary: Colors.cyan,
+        ),
       ),
-      home: const MyHomePage(title: 'Flutter Demo Home Page'),
+      home: const ParticlePlayground(),
+      debugShowCheckedModeBanner: false,
     );
   }
 }
 
-class MyHomePage extends StatefulWidget {
-  const MyHomePage({super.key, required this.title});
+class Particle {
+  double x, y;
+  double vx, vy;
+  double life;
+  double maxLife;
+  Color color;
+  double size;
 
-  // This widget is the home page of your application. It is stateful, meaning
-  // that it has a State object (defined below) that contains fields that affect
-  // how it looks.
+  Particle({
+    required this.x,
+    required this.y,
+    required this.vx,
+    required this.vy,
+    required this.life,
+    required this.maxLife,
+    required this.color,
+    required this.size,
+  });
 
-  // This class is the configuration for the state. It holds the values (in this
-  // case the title) provided by the parent (in this case the App widget) and
-  // used by the build method of the State. Fields in a Widget subclass are
-  // always marked "final".
+  void update() {
+    x += vx;
+    y += vy;
+    life -= 1;
 
-  final String title;
+    // Add some gravity
+    vy += 0.1;
 
-  @override
-  State<MyHomePage> createState() => _MyHomePageState();
+    // Add some drag
+    vx *= 0.99;
+    vy *= 0.99;
+  }
+
+  bool get isDead => life <= 0;
+
+  double get alpha => (life / maxLife).clamp(0.0, 1.0);
 }
 
-class _MyHomePageState extends State<MyHomePage> {
-  int _counter = 0;
+class ParticleSystem {
+  List<Particle> particles = [];
+  final math.Random random = math.Random();
 
-  void _incrementCounter() {
-    setState(() {
-      // This call to setState tells the Flutter framework that something has
-      // changed in this State, which causes it to rerun the build method below
-      // so that the display can reflect the updated values. If we changed
-      // _counter without calling setState(), then the build method would not be
-      // called again, and so nothing would appear to happen.
-      _counter++;
+  void addParticle(double x, double y, Color baseColor) {
+    final angle = random.nextDouble() * 2 * math.pi;
+    final speed = random.nextDouble() * 8 + 2;
+    final life = random.nextDouble() * 60 + 30;
+
+    particles.add(
+      Particle(
+        x: x,
+        y: y,
+        vx: math.cos(angle) * speed,
+        vy: math.sin(angle) * speed - random.nextDouble() * 5,
+        life: life,
+        maxLife: life,
+        color: Color.lerp(baseColor, Colors.white, random.nextDouble() * 0.3)!,
+        size: random.nextDouble() * 6 + 2,
+      ),
+    );
+  }
+
+  void update() {
+    for (var particle in particles) {
+      particle.update();
+    }
+    particles.removeWhere((particle) => particle.isDead);
+  }
+}
+
+class ParticlePlayground extends StatefulWidget {
+  const ParticlePlayground({super.key});
+
+  @override
+  State<ParticlePlayground> createState() => _ParticlePlaygroundState();
+}
+
+class _ParticlePlaygroundState extends State<ParticlePlayground>
+    with TickerProviderStateMixin {
+  late AnimationController _animationController;
+  final ParticleSystem _particleSystem = ParticleSystem();
+  Color _currentColor = Colors.purple;
+  bool _isEmitting = false;
+  double _emissionRate = 5;
+  int _frameCount = 0;
+
+  final List<Color> _colorPalette = [
+    Colors.purple,
+    Colors.cyan,
+    Colors.pink,
+    Colors.orange,
+    Colors.green,
+    Colors.red,
+    Colors.blue,
+    Colors.yellow,
+  ];
+
+  @override
+  void initState() {
+    super.initState();
+    _animationController = AnimationController(
+      duration: const Duration(milliseconds: 16), // ~60 FPS
+      vsync: this,
+    )..repeat();
+
+    _animationController.addListener(() {
+      setState(() {
+        _particleSystem.update();
+        _frameCount++;
+      });
     });
   }
 
   @override
+  void dispose() {
+    _animationController.dispose();
+    super.dispose();
+  }
+
+  void _handlePanUpdate(DragUpdateDetails details) {
+    if (_isEmitting) {
+      final RenderBox box = context.findRenderObject() as RenderBox;
+      final localPosition = box.globalToLocal(details.globalPosition);
+
+      // Add multiple particles based on emission rate
+      for (int i = 0; i < _emissionRate.round(); i++) {
+        _particleSystem.addParticle(
+          localPosition.dx + (math.Random().nextDouble() - 0.5) * 20,
+          localPosition.dy + (math.Random().nextDouble() - 0.5) * 20,
+          _currentColor,
+        );
+      }
+    }
+  }
+
+  void _handleTap(TapDownDetails details) {
+    final RenderBox box = context.findRenderObject() as RenderBox;
+    final localPosition = box.globalToLocal(details.globalPosition);
+
+    // Create explosion effect
+    for (int i = 0; i < 20; i++) {
+      _particleSystem.addParticle(
+        localPosition.dx,
+        localPosition.dy,
+        _currentColor,
+      );
+    }
+  }
+
+  @override
   Widget build(BuildContext context) {
-    // This method is rerun every time setState is called, for instance as done
-    // by the _incrementCounter method above.
-    //
-    // The Flutter framework has been optimized to make rerunning build methods
-    // fast, so that you can just rebuild anything that needs updating rather
-    // than having to individually change instances of widgets.
     return Scaffold(
-      appBar: AppBar(
-        // TRY THIS: Try changing the color here to a specific color (to
-        // Colors.amber, perhaps?) and trigger a hot reload to see the AppBar
-        // change color while the other colors stay the same.
-        backgroundColor: Theme.of(context).colorScheme.inversePrimary,
-        // Here we take the value from the MyHomePage object that was created by
-        // the App.build method, and use it to set our appbar title.
-        title: Text(widget.title),
-      ),
-      body: Center(
-        // Center is a layout widget. It takes a single child and positions it
-        // in the middle of the parent.
-        child: Column(
-          // Column is also a layout widget. It takes a list of children and
-          // arranges them vertically. By default, it sizes itself to fit its
-          // children horizontally, and tries to be as tall as its parent.
-          //
-          // Column has various properties to control how it sizes itself and
-          // how it positions its children. Here we use mainAxisAlignment to
-          // center the children vertically; the main axis here is the vertical
-          // axis because Columns are vertical (the cross axis would be
-          // horizontal).
-          //
-          // TRY THIS: Invoke "debug painting" (choose the "Toggle Debug Paint"
-          // action in the IDE, or press "p" in the console), to see the
-          // wireframe for each widget.
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: <Widget>[
-            const Text('You have pushed the button this many times:'),
-            Text(
-              '$_counter',
-              style: Theme.of(context).textTheme.headlineMedium,
+      body: Stack(
+        children: [
+          // Particle Canvas
+          GestureDetector(
+            onPanUpdate: _handlePanUpdate,
+            onTapDown: _handleTap,
+            child: CustomPaint(
+              painter: ParticlePainter(_particleSystem.particles),
+              size: Size.infinite,
             ),
-          ],
-        ),
+          ),
+
+          // Control Panel
+          Positioned(
+            top: 50,
+            left: 20,
+            right: 20,
+            child: Card(
+              color: Colors.black.withOpacity(0.8),
+              child: Padding(
+                padding: const EdgeInsets.all(16),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Text(
+                      'Particle Playground',
+                      style: Theme.of(context).textTheme.headlineSmall
+                          ?.copyWith(
+                            color: _currentColor,
+                            fontWeight: FontWeight.bold,
+                          ),
+                    ),
+                    Text(
+                      'By Kabwela John @Paraddroid',
+                      style: TextStyle(
+                        color: Colors.grey,
+                        fontSize: 12,
+                        fontStyle: FontStyle.italic,
+                      ),
+                    ),
+                    const SizedBox(height: 16),
+
+                    // Color Palette
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+                      children: _colorPalette.map((color) {
+                        return GestureDetector(
+                          onTap: () => setState(() => _currentColor = color),
+                          child: Container(
+                            width: 30,
+                            height: 30,
+                            decoration: BoxDecoration(
+                              color: color,
+                              shape: BoxShape.circle,
+                              border: _currentColor == color
+                                  ? Border.all(color: Colors.white, width: 3)
+                                  : null,
+                            ),
+                          ),
+                        );
+                      }).toList(),
+                    ),
+
+                    const SizedBox(height: 16),
+
+                    // Emission Rate Slider
+                    Row(
+                      children: [
+                        const Text('Flow: '),
+                        Expanded(
+                          child: Slider(
+                            value: _emissionRate,
+                            min: 1,
+                            max: 10,
+                            divisions: 9,
+                            activeColor: _currentColor,
+                            onChanged: (value) {
+                              setState(() => _emissionRate = value);
+                            },
+                          ),
+                        ),
+                        Text(_emissionRate.round().toString()),
+                      ],
+                    ),
+
+                    // Toggle Switch
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                      children: [
+                        const Text('Continuous Mode:'),
+                        Switch(
+                          value: _isEmitting,
+                          activeColor: _currentColor,
+                          onChanged: (value) {
+                            setState(() => _isEmitting = value);
+                          },
+                        ),
+                      ],
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ),
+
+          // Instructions
+          Positioned(
+            bottom: 50,
+            left: 20,
+            right: 20,
+            child: Card(
+              color: Colors.black.withOpacity(0.8),
+              child: Padding(
+                padding: const EdgeInsets.all(12),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Text(
+                      '✨ Instructions ✨',
+                      style: TextStyle(
+                        fontWeight: FontWeight.bold,
+                        color: _currentColor,
+                      ),
+                    ),
+                    const SizedBox(height: 8),
+                    const Text(
+                      '• Tap anywhere for explosions\n'
+                      '• Drag to paint with particles\n'
+                      '• Use continuous mode for trails\n'
+                      '• Change colors and flow rate',
+                      textAlign: TextAlign.center,
+                      style: TextStyle(fontSize: 12),
+                    ),
+                    const SizedBox(height: 8),
+                    Text(
+                      'Particles: ${_particleSystem.particles.length}',
+                      style: TextStyle(color: Colors.grey, fontSize: 10),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ),
+        ],
       ),
-      floatingActionButton: FloatingActionButton(
-        onPressed: _incrementCounter,
-        tooltip: 'Increment',
-        child: const Icon(Icons.add),
-      ), // This trailing comma makes auto-formatting nicer for build methods.
     );
+  }
+}
+
+class ParticlePainter extends CustomPainter {
+  final List<Particle> particles;
+
+  ParticlePainter(this.particles);
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final paint = Paint();
+
+    for (final particle in particles) {
+      paint.color = particle.color.withOpacity(particle.alpha);
+
+      // Create a radial gradient for each particle
+      final gradient = ui.Gradient.radial(
+        Offset(particle.x, particle.y),
+        particle.size,
+        [
+          particle.color.withOpacity(particle.alpha),
+          particle.color.withOpacity(0),
+        ],
+        [0.0, 1.0],
+      );
+
+      paint.shader = gradient;
+
+      canvas.drawCircle(Offset(particle.x, particle.y), particle.size, paint);
+    }
+  }
+
+  @override
+  bool shouldRepaint(ParticlePainter oldDelegate) {
+    return oldDelegate.particles != particles;
   }
 }
